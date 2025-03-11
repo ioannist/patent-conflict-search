@@ -1,0 +1,45 @@
+{
+  "name": "patent-conflict-search",
+  "version": "1.0.0",
+  "description": "Automated patent claim analysis and prior art search tool using Google Gemini and Project PQ",
+  "main": "src/index.js",
+  "bin": {
+    "patent-analyzer": "./src/index.js"
+  },
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "start": "node src/index.js",
+    "dev": "node src/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ioannist/patent-conflict-search.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "keywords": [
+    "patent",
+    "analysis",
+    "search",
+    "ai",
+    "gemini",
+    "project-pq"
+  ],
+  "bugs": {
+    "url": "https://github.com/ioannist/patent-conflict-search/issues"
+  },
+  "homepage": "https://github.com/ioannist/patent-conflict-search#readme",
+  "dependencies": {
+    "@google/generative-ai": "^0.2.0",
+    "axios": "^1.6.2",
+    "commander": "^11.1.0",
+    "crypto": "^1.0.1",
+    "dotenv": "^16.3.1",
+    "lowdb": "^1.0.0",
+    "mkdirp": "^3.0.1"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}
