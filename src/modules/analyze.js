@@ -1,6 +1,7 @@
 const { parseClaim } = require('./claimParser');
 const { buildQuery } = require('./queryBuilder');
 const { makeProjectPQRequest, saveResultsToFile } = require('./utils');
+const { search } = require('./search');
 const { assessConflictRisk, generateRiskSummary } = require('./riskAssessment');
 const path = require('path');
 const { 
@@ -22,6 +23,7 @@ const {
  * @param {string} options.checkpoint - Optional checkpoint ID
  * @param {boolean} options.resume - Whether to resume from a checkpoint
  * @param {number} options.riskThreshold - Risk threshold for filtering search results
+ * @param {string} options.source - Search source ("projectpq", "lens", or "all")
  * @returns {Promise<Object>} - Analysis results
  */
 async function analyze(claimText, options) {
@@ -57,18 +59,21 @@ async function analyze(claimText, options) {
       if (checkpoint.data.analysis && !checkpoint.data.searchResults && options.execute) {
         console.log('Found partial results in checkpoint. Continuing with search...');
         const query = checkpoint.data.query;
-        const searchResults = await makeProjectPQRequest(query.query);
         
-        // Assess conflict risk for the patents
-        const riskAssessedResults = await assessConflictRisk(claimText, searchResults);
-        
-        // Generate risk summary
-        const riskSummary = generateRiskSummary(riskAssessedResults);
+        // Use the search function instead of direct API call
+        const searchResponse = await search(query.query, {
+          dateRange: options.dateRange,
+          outputFormat: 'json',
+          claim: claimText,
+          riskThreshold: options.riskThreshold,
+          source: options.source
+        });
         
         const result = {
           ...checkpoint.data,
-          searchResults: riskAssessedResults,
-          riskSummary
+          searchResults: searchResponse.results,
+          riskSummary: searchResponse.riskSummary,
+          sources: searchResponse.sources
         };
         
         // Save the complete results
@@ -108,30 +113,19 @@ async function analyze(claimText, options) {
     // If execute is true, execute the search query
     if (options.execute) {
       console.log('Executing search query...');
-      const searchResults = await makeProjectPQRequest(query.query);
       
-      // Assess conflict risk for the patents
-      console.log('Analyzing patent conflict risks...');
-      const riskAssessedResults = await assessConflictRisk(claimText, searchResults);
+      // Use the search function instead of direct API call
+      const searchResponse = await search(query.query, {
+        dateRange: options.dateRange,
+        outputFormat: 'json',
+        claim: claimText,
+        riskThreshold: options.riskThreshold,
+        source: options.source
+      });
       
-      // Apply risk threshold filtering to search results if specified
-      const riskThreshold = options.riskThreshold || 0;
-      let filteredResults = riskAssessedResults;
-      
-      if (riskThreshold > 0) {
-        console.log(`Filtering results with risk threshold: ${riskThreshold}`);
-        filteredResults = riskAssessedResults.filter(patent => 
-          typeof patent.conflictRisk === 'number' && patent.conflictRisk >= riskThreshold
-        );
-        console.log(`Filtered from ${riskAssessedResults.length} to ${filteredResults.length} patents`);
-      }
-      
-      // Generate risk summary
-      console.log('Generating risk summary...');
-      const riskSummary = generateRiskSummary(riskAssessedResults, riskThreshold);
-      
-      result.searchResults = filteredResults;
-      result.riskSummary = riskSummary;
+      result.searchResults = searchResponse.results;
+      result.riskSummary = searchResponse.riskSummary;
+      result.sources = searchResponse.sources;
       
       // Save the results to a checkpoint
       if (options.checkpoint || options.resume) {
@@ -199,6 +193,15 @@ function formatOutput(result, format = 'json') {
     output += result.query.query + '\n\n';
     
     if (result.searchResults) {
+      // Add source information if available
+      if (result.sources) {
+        output += 'SOURCES\n';
+        output += '=======\n\n';
+        output += `Project PQ: ${result.sources.projectpq} results\n`;
+        output += `Lens API: ${result.sources.lens} results\n`;
+        output += `Total: ${result.sources.total} results\n\n`;
+      }
+      
       output += 'SEARCH RESULTS\n';
       output += '==============\n\n';
       
@@ -212,6 +215,7 @@ function formatOutput(result, format = 'json') {
           output += `Publication Date: ${patent.publicationDate}\n`;
           output += `Assignee: ${patent.assignee}\n`;
           output += `Inventors: ${patent.inventors.join(', ')}\n`;
+          output += `Source: ${patent.source || 'Unknown'}\n`;
           output += `Abstract: ${patent.abstract}\n`;
           
           // Add conflict risk information if available

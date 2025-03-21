@@ -1,6 +1,7 @@
 const { parseClaim } = require('./claimParser');
 const { buildQuery } = require('./queryBuilder');
-const { makeProjectPQRequest, parseClaimsFile, saveResultsToFile } = require('./utils');
+const { parseClaimsFile, saveResultsToFile } = require('./utils');
+const { search } = require('./search');
 const { assessConflictRisk, generateRiskSummary } = require('./riskAssessment');
 const { 
   generateCheckpointId, 
@@ -23,6 +24,7 @@ const path = require('path');
  * @param {string} options.checkpoint - Optional checkpoint ID
  * @param {boolean} options.resume - Whether to resume from a checkpoint
  * @param {number} options.riskThreshold - Risk threshold for filtering search results
+ * @param {string} options.source - Search source ("projectpq", "lens", or "all")
  * @returns {Promise<Object>} - Analysis results
  */
 async function analyzeMultiple(filePath, options) {
@@ -89,30 +91,19 @@ async function analyzeMultiple(filePath, options) {
           // Execute the query if requested
           if (options.execute) {
             console.log(`Executing search query for claim ${i + 1}...`);
-            const searchResults = await makeProjectPQRequest(query.query);
             
-            // Assess conflict risk for the patents
-            console.log(`Analyzing patent conflict risks for claim ${i + 1}...`);
-            const riskAssessedResults = await assessConflictRisk(allClaims[i], searchResults);
+            // Use the search function instead of direct API call
+            const searchResponse = await search(query.query, {
+              dateRange: options.dateRange,
+              outputFormat: 'json',
+              claim: allClaims[i],
+              riskThreshold: options.riskThreshold,
+              source: options.source
+            });
             
-            // Apply risk threshold filtering to search results if specified
-            const riskThreshold = options.riskThreshold || 0;
-            let filteredResults = riskAssessedResults;
-            
-            if (riskThreshold > 0) {
-              console.log(`Filtering results with risk threshold: ${riskThreshold}`);
-              filteredResults = riskAssessedResults.filter(patent => 
-                typeof patent.conflictRisk === 'number' && patent.conflictRisk >= riskThreshold
-              );
-              console.log(`Filtered from ${riskAssessedResults.length} to ${filteredResults.length} patents`);
-            }
-            
-            // Generate risk summary
-            console.log(`Generating risk summary for claim ${i + 1}...`);
-            const riskSummary = generateRiskSummary(riskAssessedResults, riskThreshold);
-            
-            result.searchResults = filteredResults;
-            result.riskSummary = riskSummary;
+            result.searchResults = searchResponse.results;
+            result.riskSummary = searchResponse.riskSummary;
+            result.sources = searchResponse.sources;
           }
           
           results.push(result);
@@ -169,30 +160,19 @@ async function analyzeMultiple(filePath, options) {
       // Execute the query if requested
       if (options.execute) {
         console.log(`Executing search query for claim ${i + 1}...`);
-        const searchResults = await makeProjectPQRequest(query.query);
         
-        // Assess conflict risk for the patents
-        console.log(`Analyzing patent conflict risks for claim ${i + 1}...`);
-        const riskAssessedResults = await assessConflictRisk(claims[i], searchResults);
+        // Use the search function instead of direct API call
+        const searchResponse = await search(query.query, {
+          dateRange: options.dateRange,
+          outputFormat: 'json',
+          claim: claims[i],
+          riskThreshold: options.riskThreshold,
+          source: options.source
+        });
         
-        // Apply risk threshold filtering to search results if specified
-        const riskThreshold = options.riskThreshold || 0;
-        let filteredResults = riskAssessedResults;
-        
-        if (riskThreshold > 0) {
-          console.log(`Filtering results with risk threshold: ${riskThreshold}`);
-          filteredResults = riskAssessedResults.filter(patent => 
-            typeof patent.conflictRisk === 'number' && patent.conflictRisk >= riskThreshold
-          );
-          console.log(`Filtered from ${riskAssessedResults.length} to ${filteredResults.length} patents`);
-        }
-        
-        // Generate risk summary
-        console.log(`Generating risk summary for claim ${i + 1}...`);
-        const riskSummary = generateRiskSummary(riskAssessedResults, riskThreshold);
-        
-        result.searchResults = filteredResults;
-        result.riskSummary = riskSummary;
+        result.searchResults = searchResponse.results;
+        result.riskSummary = searchResponse.riskSummary;
+        result.sources = searchResponse.sources;
       }
       
       results.push(result);
@@ -271,6 +251,14 @@ function formatOutput(results, format = 'json') {
       output += result.query.query + '\n\n';
       
       if (result.searchResults) {
+        // Add source information if available
+        if (result.sources) {
+          output += 'SOURCES:\n';
+          output += `Project PQ: ${result.sources.projectpq} results\n`;
+          output += `Lens API: ${result.sources.lens} results\n`;
+          output += `Total: ${result.sources.total} results\n\n`;
+        }
+        
         output += 'SEARCH RESULTS:\n';
         
         if (result.searchResults.length === 0) {
@@ -283,6 +271,7 @@ function formatOutput(results, format = 'json') {
             output += `Publication Date: ${patent.publicationDate}\n`;
             output += `Assignee: ${patent.assignee}\n`;
             output += `Inventors: ${patent.inventors.join(', ')}\n`;
+            output += `Source: ${patent.source || 'Unknown'}\n`;
             output += `Abstract: ${patent.abstract}\n`;
             
             // Add conflict risk information if available

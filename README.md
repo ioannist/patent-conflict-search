@@ -1,13 +1,14 @@
 # Patent Claim Analyzer
 
-A command-line tool for automated patent claim analysis and prior art search using Google Gemini and Project PQ.
+A command-line tool for automated patent claim analysis and prior art search using Google Gemini with Project PQ and Lens API integration.
 
 ## Features
 
 - Analyze patent claims using Google Gemini AI
 - Extract keywords, concepts, and relevant classification codes
-- Generate optimized search queries for Project PQ
-- Search for prior art using Project PQ API
+- Generate optimized search queries for patent databases
+- Search for prior art using Project PQ API and Lens API
+- Combine search results from multiple patent databases
 - AI-powered conflict risk assessment for each patent result
 - Risk scoring on a scale of 1-10 with detailed explanations
 - Risk threshold filtering to focus on higher-risk patents
@@ -38,6 +39,7 @@ cp .env.example .env
 ```
 PROJECT_PQ_API_KEY=your_project_pq_api_key_here
 GOOGLE_GEMINI_API_KEY=your_google_gemini_api_key_here
+LENS_API_KEY=your_lens_api_key_here
 ```
 
 5. Make the CLI executable:
@@ -62,6 +64,18 @@ patent-analyzer analyze "A computer-implemented method..." -i -e
 From a file:
 ```bash
 patent-analyzer analyze --file claim.txt -i -e
+```
+
+You can specify which patent database to use with the `--source` option:
+```bash
+# Search only in Project PQ
+patent-analyzer analyze "A computer-implemented method..." -i -e -s projectpq
+
+# Search only in Lens
+patent-analyzer analyze "A computer-implemented method..." -i -e -s lens
+
+# Search in both (default)
+patent-analyzer analyze "A computer-implemented method..." -i -e -s all
 ```
 
 ### Analyze Multiple Claims from a File
@@ -93,11 +107,23 @@ If you don't specify a checkpoint ID:
 - For multiple claim analysis: The filename will be used as the checkpoint ID
 - For claim text entered directly: An MD5 hash of the claim text will be used (first 8 characters)
 
-### Execute a Raw Project PQ Query
+### Execute a Patent Search Query
 
 Simple search:
 ```bash
 patent-analyzer search 'ABST/"dynamic vocabulary" AND CPC/G06N3/08'
+```
+
+Specify which database to search:
+```bash
+# Search only in Project PQ
+patent-analyzer search 'ABST/"neural network"' -s projectpq
+
+# Search only in Lens
+patent-analyzer search 'ABST/"neural network"' -s lens
+
+# Search in both (default)
+patent-analyzer search 'ABST/"neural network"' -s all
 ```
 
 Search with risk assessment:
@@ -131,7 +157,7 @@ The risk threshold is applied to both the search results and the risk summary, e
 
 - `--date-range, -d`: Specifies the date range (default: last_10_years)
 - `--independent, -i`: Flag indicating if the claim is independent (default: true)
-- `--execute, -e`: Execute the query against Project PQ (default: false)
+- `--execute, -e`: Execute the search query (default: false)
 - `--file, -f`: Path to a file containing a single claim (required if claim_text is not provided)
 - `--output-format`: Output format, either json or text (default: json)
 - `--checkpoint`: Specify a unique ID for the checkpoint (default: auto-generated from input)
@@ -139,6 +165,7 @@ The risk threshold is applied to both the search results and the risk summary, e
 - `--claim`: Claim text to assess conflict risk against search results (for search command)
 - `--claim-file`: Path to file containing claim text (for search command)
 - `--risk-threshold, -rt`: Filter out patents with risk score below this threshold (default: 0)
+- `--source, -s`: Search source: "projectpq", "lens", or "all" (default: all)
 
 ## Risk Assessment
 
@@ -170,11 +197,36 @@ Highest Risk Patent: US9876543B2 (Method for training neural networks) - Risk Sc
 Overall Assessment: MEDIUM RISK: 3 patents show moderate conflict potential. Recommended action: Consider claim refinement to reduce overlap with existing patents.
 ```
 
+## Patent Database Sources
+
+The tool supports searching in two patent databases:
+
+1. **Project PQ** - A comprehensive patent database with advanced search capabilities.
+2. **Lens** - The Lens provides public access to patent and scholarly data.
+
+When running searches using both sources (the default), the tool:
+- Converts the query as needed between database-specific formats
+- Executes the search in parallel across both databases
+- Combines and deduplicates the results
+- Provides source information for each patent result
+- Shows a summary of results from each source
+
+Example sources summary:
+```
+SOURCES
+=======
+
+Project PQ: 35 results
+Lens API: 42 results
+Total: 77 results
+```
+
 ## Error Handling
 
 The tool implements robust error handling with different strategies:
 - For Gemini API: Unlimited retries with exponential backoff (max 3 minutes between retries)
 - For Project PQ API: Limited to 3 retry attempts before failing
+- For Lens API: Limited to 3 retry attempts before failing
 
 ## Development
 

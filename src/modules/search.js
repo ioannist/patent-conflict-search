@@ -1,17 +1,22 @@
-const { makeProjectPQRequest, saveResultsToFile } = require('./utils');
+const { makeProjectPQRequest, makeLensAPIRequest, convertToLensQuery, saveResultsToFile } = require('./utils');
 const { assessConflictRisk, generateRiskSummary } = require('./riskAssessment');
 const crypto = require('crypto');
 
 /**
- * Executes a raw Project PQ query
- * @param {string} queryText - The Project PQ query to execute
+ * Executes a raw search query against Project PQ and Lens API
+ * @param {string} queryText - The search query to execute
  * @param {Object} options - Options for the search
  * @param {string} options.dateRange - Date range for the search
  * @param {string} options.outputFormat - Output format (json or text)
+ * @param {string} options.source - Search source ("projectpq", "lens", or "all", defaults to "all")
  * @returns {Promise<Object>} - Search results
  */
 async function search(queryText, options) {
   try {
+    
+    // Set default search source if not provided
+    options.source = options.source || 'all';
+    
     // Add date range if provided and not already in the query
     let finalQuery = queryText;
     if (options.dateRange && !queryText.includes(options.dateRange)) {
@@ -25,18 +30,66 @@ async function search(queryText, options) {
       .digest('hex')
       .substring(0, 8);
     
-    // Execute the query
-    console.log('Executing search query...');
-    const searchResults = await makeProjectPQRequest(finalQuery);
+    // Initialize arrays for search results from different sources
+    let projectPQResults = [];
+    let lensResults = [];
+    let allResults = [];
+    
+    // Execute the query on Project PQ if requested
+    if (options.source === 'projectpq' || options.source === 'all') {
+      console.log('Executing search query on Project PQ...');
+      try {
+        projectPQResults = await makeProjectPQRequest(finalQuery);
+        console.log(`Retrieved ${projectPQResults.length} results from Project PQ`);
+        
+        // Add source information to each result
+        projectPQResults.forEach(result => {
+          result.source = 'projectpq';
+        });
+        
+        // Add to combined results
+        allResults = allResults.concat(projectPQResults);
+      } catch (error) {
+        console.error('Error searching Project PQ:', error.message);
+      }
+    }
+    
+    // Execute the query on Lens API if requested
+    if (options.source === 'lens' || options.source === 'all') {
+      console.log('Executing search query on Lens API...');
+      try {
+        // Convert Project PQ query to Lens API format
+        console.log('Converting query to Lens API format...');
+        const lensQuery = convertToLensQuery(finalQuery);
+        console.log('Lens query after conversion:', JSON.stringify(lensQuery, null, 2));
+        
+        console.log('Making request to Lens API...');
+        lensResults = await makeLensAPIRequest(lensQuery);
+        console.log(`Retrieved ${lensResults.length} results from Lens API`);
+        
+        // Add source information to each result
+        lensResults.forEach(result => {
+          result.source = 'lens';
+        });
+        
+        // Add to combined results
+        allResults = allResults.concat(lensResults);
+      } catch (error) {
+        console.error('Error searching Lens API:', error.message);
+        console.error('Error stack:', error.stack);
+      }
+    }
+    
+    console.log(`Total combined results: ${allResults.length}`);
     
     // Skip risk assessment for raw queries since we don't have a claim to compare against
     // The user can specify a claim with options.claim if needed
-    let riskAssessedResults = searchResults;
+    let riskAssessedResults = allResults;
     let riskSummary = null;
     
     if (options.claim) {
       console.log('Analyzing patent conflict risks...');
-      riskAssessedResults = await assessConflictRisk(options.claim, searchResults);
+      riskAssessedResults = await assessConflictRisk(options.claim, allResults);
       
       // Apply risk threshold filtering to search results if specified
       const riskThreshold = options.riskThreshold || 0;
@@ -61,7 +114,12 @@ async function search(queryText, options) {
     const result = {
       query: finalQuery,
       results: riskAssessedResults,
-      riskSummary
+      riskSummary,
+      sources: {
+        projectpq: projectPQResults.length,
+        lens: lensResults.length,
+        total: allResults.length
+      }
     };
     
     // Save results to results directory
@@ -81,6 +139,7 @@ async function search(queryText, options) {
  * @param {string} data.query - The query that was executed
  * @param {Array} data.results - The search results
  * @param {Object} data.riskSummary - The risk summary (if available)
+ * @param {Object} data.sources - Count of results from each source
  * @param {string} format - Output format (json or text)
  * @returns {Object|string} - Formatted output
  */
@@ -92,6 +151,13 @@ function formatOutput(data, format = 'json') {
     let output = 'SEARCH QUERY\n';
     output += '============\n\n';
     output += data.query + '\n\n';
+    
+    // Add source information
+    output += 'SOURCES\n';
+    output += '=======\n\n';
+    output += `Project PQ: ${data.sources.projectpq} results\n`;
+    output += `Lens API: ${data.sources.lens} results\n`;
+    output += `Total: ${data.sources.total} results\n\n`;
     
     output += 'SEARCH RESULTS\n';
     output += '==============\n\n';
@@ -106,6 +172,7 @@ function formatOutput(data, format = 'json') {
         output += `Publication Date: ${patent.publicationDate}\n`;
         output += `Assignee: ${patent.assignee}\n`;
         output += `Inventors: ${patent.inventors.join(', ')}\n`;
+        output += `Source: ${patent.source || 'Unknown'}\n`;
         output += `Abstract: ${patent.abstract}\n`;
         
         // Add conflict risk information if available

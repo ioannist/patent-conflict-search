@@ -38,6 +38,7 @@ program
   .option('--checkpoint <checkpoint_id>', 'Checkpoint ID for resumable operations')
   .option('--resume', 'Resume from a checkpoint if it exists')
   .option('-rt, --risk-threshold <number>', 'Filter out patents with risk score below this threshold', 0)
+  .option('-s, --source <source>', 'Search source: "projectpq", "lens", or "all"', 'all')
   .action(async (claimText, options) => {
     try {
       // Check if either claim_text or file option is provided, unless we're resuming
@@ -82,6 +83,7 @@ program
   .option('--checkpoint <checkpoint_id>', 'Checkpoint ID for resumable operations')
   .option('--resume', 'Resume from a checkpoint if it exists')
   .option('-rt, --risk-threshold <number>', 'Filter out patents with risk score below this threshold', 0)
+  .option('-s, --source <source>', 'Search source: "projectpq", "lens", or "all"', 'all')
   .action(async (claimsFilePath, options) => {
     try {
       // Convert risk threshold to a number
@@ -105,13 +107,14 @@ program
 // Search command
 program
   .command('search')
-  .description('Execute a raw Project PQ query')
-  .argument('<query_text>', 'The Project PQ query to execute')
+  .description('Execute a patent search query')
+  .argument('<query_text>', 'The query to execute (using Project PQ syntax)')
   .option('-d, --date-range <date_range>', 'Date range for search', DEFAULT_DATE_RANGE)
   .option('--output-format <format>', 'Output format (json or text)', 'json')
   .option('--claim <claim_text>', 'Optional claim text to assess risks against search results')
   .option('--claim-file <claim_file_path>', 'Path to a file containing a single claim for risk assessment')
   .option('-rt, --risk-threshold <number>', 'Filter out patents with risk score below this threshold', 0)
+  .option('-s, --source <source>', 'Search source: "projectpq", "lens", or "all"', 'all')
   .action(async (queryText, options) => {
     try {
       // If claim-file is provided, read the claim from the file
